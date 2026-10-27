@@ -381,7 +381,7 @@ Panel {
           anchors.right: dndMinusEnd.left
           anchors.verticalCenter: parent.verticalCenter
           horizontalAlignment: Text.AlignHCenter
-          text: "–"
+          text: "to"
           color: root.dim
           font.family: bar ? bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.body
