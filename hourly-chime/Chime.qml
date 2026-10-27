@@ -343,7 +343,7 @@ Panel {
           id: dndLabel
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          text: "DND (chime only)"
+          text: "Do not disturb"
           color: root.dim
           font.family: bar ? bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.bodySmall
