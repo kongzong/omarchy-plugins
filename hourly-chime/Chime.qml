@@ -282,7 +282,7 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    contentWidth: panel.fittedContentWidth(Style.space(260))
+    contentWidth: panel.fittedContentWidth(Style.space(300))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(520))
 
     // Shown only when a reminder is enabled; earliest enabled one wins
