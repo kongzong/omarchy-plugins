@@ -331,7 +331,7 @@ Panel {
         color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
       }
 
-      // ---- 免打扰 ----
+      // ---- 免打扰(单行紧凑:起 – 止) ----
       Text {
         text: "免打扰时段(不拦闹钟)"
         color: root.dim
@@ -339,59 +339,83 @@ Panel {
         font.pixelSize: Style.font.bodySmall
       }
 
-      Repeater {
-        model: [
-          { "label": "开始", "key": "start" },
-          { "label": "结束", "key": "end" }
-        ]
+      function shiftDndStart(delta) {
+        root.dndStartMin = ((root.dndStartMin + delta) % 1440 + 1440) % 1440
+        root.saveState()
+      }
 
-        delegate: Item {
-          id: dndRow
-          required property var modelData
-          width: parent.width
-          height: Style.space(28)
+      function shiftDndEnd(delta) {
+        root.dndEndMin = ((root.dndEndMin + delta) % 1440 + 1440) % 1440
+        root.saveState()
+      }
 
-          readonly property int value: modelData.key === "start" ? root.dndStartMin : root.dndEndMin
+      Item {
+        width: parent.width
+        height: Style.space(28)
 
-          function shift(delta) {
-            var v = ((value + delta) % 1440 + 1440) % 1440
-            if (modelData.key === "start") root.dndStartMin = v
-            else root.dndEndMin = v
-            root.saveState()
-          }
+        // 左组:开始 [- 23:00 +]
+        StepButton {
+          id: dndMinusStart
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          glyph: "-"
+          onStepped: root.shiftDndStart(-15)
+        }
+        Text {
+          id: dndTimeStart
+          anchors.left: dndMinusStart.right
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.fmtTime(root.dndStartMin)
+          color: root.foreground
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
+        }
+        StepButton {
+          id: dndPlusStart
+          anchors.left: dndTimeStart.right
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          glyph: "+"
+          onStepped: root.shiftDndStart(15)
+        }
 
-          Text {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: dndRow.modelData.label
-            color: root.foreground
-            font.family: bar ? bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.body
-          }
+        // 中间分隔
+        Text {
+          id: dndDash
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.verticalCenter: parent.verticalCenter
+          text: "–"
+          color: root.dim
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
+        }
 
-          Row {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(10)
-
-            StepButton {
-              glyph: "-"
-              anchors.verticalCenter: parent.verticalCenter
-              onStepped: dndRow.shift(-15)
-            }
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.fmtTime(dndRow.value)
-              color: root.foreground
-              font.family: bar ? bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.body
-            }
-            StepButton {
-              glyph: "+"
-              anchors.verticalCenter: parent.verticalCenter
-              onStepped: dndRow.shift(15)
-            }
-          }
+        // 右组:结束 [- 07:00 +],贴右对齐
+        StepButton {
+          id: dndMinusEnd
+          anchors.right: dndTimeEnd.left
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          glyph: "-"
+          onStepped: root.shiftDndEnd(-15)
+        }
+        Text {
+          id: dndTimeEnd
+          anchors.right: dndPlusEnd.left
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.fmtTime(root.dndEndMin)
+          color: root.foreground
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
+        }
+        StepButton {
+          id: dndPlusEnd
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          glyph: "+"
+          onStepped: root.shiftDndEnd(15)
         }
       }
 
