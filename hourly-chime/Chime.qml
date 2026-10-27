@@ -116,6 +116,34 @@ Panel {
     root.saveState()
   }
 
+  // 宽松解析:"7:30"/"07:30"/"730"/"0730" → 当日分钟;非法返回 -1
+  function parseAlarmInput(str) {
+    var s = String(str || "").trim()
+    var m = s.match(/^(\d{1,2}):(\d{1,2})$/)
+    var h, mi
+    if (m) {
+      h = Number(m[1]); mi = Number(m[2])
+    } else {
+      var d = s.replace(/\D/g, "")
+      if (d.length === 4) { h = Number(d.slice(0, 2)); mi = Number(d.slice(2)) }
+      else if (d.length === 3) { h = Number(d.slice(0, 1)); mi = Number(d.slice(1)) }
+      else return -1
+    }
+    if (!(h >= 0 && h <= 23 && mi >= 0 && mi <= 59)) return -1
+    return h * 60 + mi
+  }
+
+  // 直接输入时间;非法返回 false,由调用方把输入框重置回当前值
+  function setAlarmTime(index, str) {
+    var v = parseAlarmInput(str)
+    if (v < 0) return false
+    var copy = root.alarms.slice()
+    copy[index].min = v
+    root.alarms = copy
+    root.saveState()
+    return true
+  }
+
   FileView {
     id: stateFile
     path: root.statePath
@@ -429,20 +457,44 @@ Panel {
             onStepped: root.shiftAlarm(alarmRow.index, -5)
           }
 
-          Text {
-            id: timeText
+          // 时间:可直接输入(7:30 / 0730 / 730),回车或失焦生效;非法自动还原
+          Item {
+            id: timeBox
             anchors.left: minusBtn.right
             anchors.leftMargin: Style.space(6)
             anchors.verticalCenter: parent.verticalCenter
-            text: root.fmtTime(alarmRow.modelData.min)
-            color: root.foreground
-            font.family: bar ? bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.body
+            width: Style.space(52)
+            height: parent.height
+
+            Rectangle {
+              anchors.fill: parent
+              radius: Style.space(4)
+              color: timeInput.activeFocus
+                     ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                     : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+            }
+
+            TextInput {
+              id: timeInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(6)
+              anchors.rightMargin: Style.space(6)
+              verticalAlignment: TextInput.AlignVCenter
+              color: root.foreground
+              font.family: bar ? bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.body
+              clip: true
+              text: root.fmtTime(alarmRow.modelData.min)
+              onEditingFinished: {
+                if (!root.setAlarmTime(alarmRow.index, text))
+                  timeInput.text = root.fmtTime(alarmRow.modelData.min)  // 非法输入还原
+              }
+            }
           }
 
           StepButton {
             id: plusBtn
-            anchors.left: timeText.right
+            anchors.left: timeBox.right
             anchors.leftMargin: Style.space(6)
             anchors.verticalCenter: parent.verticalCenter
             glyph: "+"
