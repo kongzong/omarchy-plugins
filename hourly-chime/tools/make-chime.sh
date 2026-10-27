@@ -2,6 +2,7 @@
 # 合成卡西欧电子表风格提示音。可调参数(环境变量):
 #   WAVE=sine|square  波形(sine=柔和的"滴",square=硬朗的"哔")
 #   FREQ=Hz           频率     DUR=秒  时长     VOL=0-1  音量
+#   BEEPS=N           哔声次数(1=单哔,2=双哔...) GAP=秒  哔间静音
 # 用法:./make-chime.sh [输出路径]
 set -euo pipefail
 
@@ -9,6 +10,8 @@ WAVE="${WAVE:-square}"
 FREQ="${FREQ:-2000}"
 DUR="${DUR:-0.08}"
 VOL="${VOL:-0.3}"
+BEEPS="${BEEPS:-1}"
+GAP="${GAP:-0.12}"
 OUT="${1:-$(cd "$(dirname "$0")/.." && pwd)/hourly-chime/chime.wav}"
 
 mkdir -p "$(dirname "$OUT")"
@@ -25,4 +28,15 @@ ffmpeg -y -hide_banner -loglevel error -f lavfi -i \
   "aevalsrc=${VOL}*${OSC}*min(1\,t/0.005)*min(1\,(${DUR}-t)/0.03):s=44100:d=${DUR}" \
   -c:a pcm_s16le "$OUT"
 
-echo "chime written: $OUT (${WAVE} ${FREQ}Hz ${DUR}s)"
+# 多哔(BEEPS=2):单哔 + 静音 + 单哔
+if [ "$BEEPS" -eq 2 ]; then
+  TMP="$(mktemp --suffix=.wav)"
+  cp "$OUT" "$TMP"
+  ffmpeg -y -hide_banner -loglevel error -i "$TMP" \
+    -f lavfi -i "anullsrc=r=44100:cl=mono:d=${GAP}" \
+    -filter_complex "[0:a]asplit=2[b1][b2];[b1][1:a][b2]concat=n=3:v=0:a=1" \
+    -c:a pcm_s16le "$OUT"
+  rm -f "$TMP"
+fi
+
+echo "chime written: $OUT (${WAVE} ${FREQ}Hz ${DUR}s x${BEEPS})"

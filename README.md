@@ -6,7 +6,7 @@ kongzong 的 Omarchy 4 插件集合。每个插件自包含(描述符 + QML + �
 
 | 插件 | 说明 | 安装命令 |
 |------|------|----------|
-| [hourly-chime](./hourly-chime/) | 整点报时:电子表风格"哔"+ 通知,免打扰时段可调 | `cp -r hourly-chime ~/.config/omarchy/plugins/` |
+| [hourly-chime](./hourly-chime/) | 整点报时 + 每日闹钟提醒(双哔+提醒内容),免打扰时段可调 | `cp -r hourly-chime ~/.config/omarchy/plugins/` |
 
 ## 通用安装方式(Omarchy 4.x)
 

@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// 整点报时:栏上铃铛 + 弹出面板(开关 + 免打扰时段)。
+// 整点报时 + 闹钟提醒:栏上铃铛 + 弹出面板(报时开关 + 免打扰时段 + 闹钟列表)。
 // 结构照抄官方 agents 插件:Panel 管生命周期与 IPC,BarIconButton 是栏按钮,
 // KeyboardPanel 是锚定按钮的弹出面板。
 Panel {
@@ -25,6 +25,11 @@ Panel {
   property int dndStartMin: 23 * 60
   property int dndEndMin: 7 * 60
 
+  // 闹钟列表:[{min: 当日分钟数, label: 提醒内容, on: bool}],每天重复触发
+  property var alarms: []
+  readonly property int maxAlarms: 5
+  readonly property bool anyAlarmOn: root.alarms.some(function(a) { return a.on })
+
   readonly property string statePath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/hourly-chime.json"
 
   function fmtTime(min) {
@@ -40,7 +45,7 @@ Panel {
     return (v >= 0 && v < 1440) ? v : fallbackMin
   }
 
-  // 免打扰判断,支持跨午夜区间(如 23:00–07:00)
+  // 免打扰判断,支持跨午夜区间(如 23:00–07:00);只拦报时,不拦闹钟
   function inDnd(minOfDay) {
     if (dndStartMin === dndEndMin) return false
     if (dndStartMin < dndEndMin) return minOfDay >= dndStartMin && minOfDay < dndEndMin
@@ -53,14 +58,62 @@ Panel {
     chimeOn = data.enabled === true
     dndStartMin = parseTime(data.dndStart, 23 * 60)
     dndEndMin = parseTime(data.dndEnd, 7 * 60)
+    var list = Array.isArray(data.alarms) ? data.alarms : []
+    root.alarms = list.map(function(a) {
+      return { min: parseTime(a.time, 8 * 60), label: String(a.label || ""), on: a.on === true }
+    })
   }
 
   function saveState() {
     stateFile.setText(JSON.stringify({
       enabled: root.chimeOn,
       dndStart: fmtTime(root.dndStartMin),
-      dndEnd: fmtTime(root.dndEndMin)
+      dndEnd: fmtTime(root.dndEndMin),
+      alarms: root.alarms.map(function(a) {
+        return { time: fmtTime(a.min), label: a.label, on: a.on }
+      })
     }, null, 2) + "\n")
+  }
+
+  // ------------------------------------------------- alarm list helpers
+  // 每次改动都整体重建数组(QML 数组属性需重新赋值才会触发绑定刷新)
+  function addAlarm() {
+    if (root.alarms.length >= root.maxAlarms) return
+    var now = new Date()
+    var min = Math.ceil((now.getHours() * 60 + now.getMinutes() + 1) / 5) * 5
+    var copy = root.alarms.slice()
+    copy.push({ min: min % 1440, label: "", on: true })
+    root.alarms = copy
+    root.saveState()
+  }
+
+  function removeAlarm(index) {
+    var copy = root.alarms.slice()
+    copy.splice(index, 1)
+    root.alarms = copy
+    root.saveState()
+  }
+
+  function toggleAlarm(index) {
+    var copy = root.alarms.slice()
+    copy[index].on = !copy[index].on
+    root.alarms = copy
+    root.saveState()
+  }
+
+  function shiftAlarm(index, delta) {
+    var copy = root.alarms.slice()
+    var a = copy[index]
+    a.min = ((a.min + delta) % 1440 + 1440) % 1440
+    root.alarms = copy
+    root.saveState()
+  }
+
+  function setAlarmLabel(index, text) {
+    var copy = root.alarms.slice()
+    copy[index].label = String(text || "").trim()
+    root.alarms = copy
+    root.saveState()
   }
 
   FileView {
@@ -74,40 +127,54 @@ Panel {
     onFileChanged: reload()
   }
 
-  // ------------------------------------------------------- fire at :00
+  // ------------------------------------------------------- fire
   readonly property string chimePath: Qt.resolvedUrl("chime.wav").toString().replace(/^file:\/\//, "")
+  readonly property string alarmPath: Qt.resolvedUrl("alarm.wav").toString().replace(/^file:\/\//, "")
 
-  function fire() {
+  function fireChime(minOfDay) {
     if (!root.chimeOn) return
-    var now = new Date()
-    if (root.inDnd(now.getHours() * 60 + now.getMinutes())) return
+    if (root.inDnd(minOfDay)) return
     Quickshell.execDetached(["paplay", root.chimePath])
-    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "整点报时", "现在 " + fmtTime(now.getHours() * 60)])
+    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "整点报时", "现在 " + fmtTime(minOfDay)])
   }
 
-  function msToNextHour() {
+  // 闹钟:双哔,免打扰不拦截,通知带提醒内容
+  function fireAlarm(a, minOfDay) {
+    Quickshell.execDetached(["paplay", root.alarmPath])
+    var msg = (a.label && a.label.length > 0) ? a.label : "现在 " + fmtTime(minOfDay)
+    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "闹钟 " + fmtTime(minOfDay), msg])
+  }
+
+  // ------------------------------------------------- minute tick
+  function msToNextMinute() {
     var now = new Date()
-    var next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0)
+    var next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0)
     return Math.max(1000, next.getTime() - now.getTime())
   }
 
-  // 每次醒来都对齐下一个整点;若因休眠错过整点(minutes != 0)则静默重新对齐
+  // 每分钟醒来:整点走报时,任意分钟匹配启用的闹钟;
+  // 若因休眠错过(醒来时分钟已过),静默重新对齐,不补响
   Timer {
-    id: hourTimer
+    id: tickTimer
     repeat: true
     running: true
     triggeredOnStart: false
     interval: 60000
     onTriggered: {
       var now = new Date()
-      if (now.getMinutes() === 0) root.fire()
-      hourTimer.interval = root.msToNextHour()
+      var minOfDay = now.getHours() * 60 + now.getMinutes()
+      if (now.getMinutes() === 0) root.fireChime(minOfDay)
+      for (var i = 0; i < root.alarms.length; i++) {
+        var a = root.alarms[i]
+        if (a.on && a.min === minOfDay) root.fireAlarm(a, minOfDay)
+      }
+      tickTimer.interval = root.msToNextMinute()
     }
   }
 
-  Component.onCompleted: hourTimer.interval = root.msToNextHour()
+  Component.onCompleted: tickTimer.interval = root.msToNextMinute()
 
-  // 面板打开时每 30 秒刷新一次"下次报时"预览
+  // 面板打开时每 30 秒刷新一次"下次触发"预览
   // 注意:必须放根层级——KeyboardPanel 的默认属性 contentItem 只收 Item,
   // Timer 直接写在它下面会让整个组件加载失败(实测踩坑)。
   property double previewStamp: Date.now()
@@ -145,8 +212,8 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     // 开=闹钟+高亮色,关=被划掉的闹钟(md-alarm_off,码位从本机字体 cmap 实证)
-    text: root.chimeOn ? "\uDB80\uDC20" : "\uDB80\uDC23"
-    active: root.chimeOn
+    text: (root.chimeOn || root.anyAlarmOn) ? "\uDB80\uDC20" : "\uDB80\uDC23"
+    active: root.chimeOn || root.anyAlarmOn
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }
@@ -160,14 +227,27 @@ Panel {
     bar: root.bar
     open: root.opened
     contentWidth: panel.fittedContentWidth(Style.space(260))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(300))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(520))
 
-    readonly property string nextChime: {
-      var next = new Date(root.previewStamp)
-      next.setHours(next.getHours() + 1, 0, 0, 0)
+    readonly property string previewText: {
       var now = new Date(root.previewStamp)
-      var suffix = root.inDnd(now.getHours() * 60 + now.getMinutes()) ? "(免打扰中,将跳过)" : ""
-      return "下次报时 " + root.fmtTime(next.getHours() * 60) + " " + suffix
+      var nowMin = now.getHours() * 60 + now.getMinutes()
+      var parts = []
+      // 下次报时
+      parts.push("下次报时 " + root.fmtTime((nowMin - nowMin % 60) + 60))
+      if (root.inDnd(nowMin)) parts[parts.length - 1] += "(免打扰中,将跳过)"
+      // 下次闹钟(启用中的最早一个;过了今天时刻的算明天,不显示具体日期)
+      var best = -1
+      for (var i = 0; i < root.alarms.length; i++) {
+        var a = root.alarms[i]
+        if (!a.on) continue
+        if (best < 0 || a.min < root.alarms[best].min) best = i
+      }
+      if (best >= 0) {
+        var a2 = root.alarms[best]
+        parts.push("下次闹钟 " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : ""))
+      }
+      return parts.join(" · ")
     }
 
     Column {
@@ -213,7 +293,7 @@ Panel {
 
       // ---- 免打扰 ----
       Text {
-        text: "免打扰时段"
+        text: "免打扰时段(不拦闹钟)"
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -275,11 +355,158 @@ Panel {
         }
       }
 
+      // 分隔线
+      Rectangle {
+        width: parent.width
+        height: 1
+        color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
+      }
+
+      // ---- 闹钟(每天重复) ----
+      Item {
+        width: parent.width
+        height: alarmTitle.implicitHeight
+
+        Text {
+          id: alarmTitle
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          text: "闹钟(每天重复)"
+          color: root.dim
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.alarms.length >= root.maxAlarms ? "已达上限" : "＋ 添加"
+          color: mouseAdd.containsMouse ? Commons.Color.accent : (root.alarms.length >= root.maxAlarms ? root.dim : root.foreground)
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.weight: Font.DemiBold
+
+          MouseArea {
+            id: mouseAdd
+            anchors.fill: parent
+            anchors.margins: -Style.space(6)
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            enabled: root.alarms.length < root.maxAlarms
+            onClicked: root.addAlarm()
+          }
+        }
+      }
+
+      Repeater {
+        model: root.alarms
+
+        delegate: Item {
+          id: alarmRow
+          required property var modelData
+          required property int index
+          width: parent.width
+          height: Style.space(28)
+
+          Row {
+            anchors.fill: parent
+            spacing: Style.space(6)
+
+            StepButton {
+              glyph: "-"
+              anchors.verticalCenter: parent.verticalCenter
+              onStepped: root.shiftAlarm(alarmRow.index, -5)
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.fmtTime(alarmRow.modelData.min)
+              color: root.foreground
+              font.family: bar ? bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.body
+            }
+
+            StepButton {
+              glyph: "+"
+              anchors.verticalCenter: parent.verticalCenter
+              onStepped: root.shiftAlarm(alarmRow.index, 5)
+            }
+
+            // 提醒内容:点击输入,失焦/回车保存
+            Item {
+              id: labelBox
+              width: parent.width - parent.spacing * 5 - 12 - toggleWidth
+              height: parent.height
+
+              readonly property int toggleWidth: Style.space(46)
+
+              Rectangle {
+                anchors.fill: parent
+                radius: Style.space(4)
+                color: labelInput.activeFocus
+                       ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                       : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
+              }
+
+              Text {
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+                visible: labelInput.text === "" && !labelInput.activeFocus
+                text: "提醒内容…"
+                color: root.dim
+                font.family: bar ? bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.bodySmall
+                elide: Text.ElideRight
+              }
+
+              TextInput {
+                id: labelInput
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                verticalAlignment: TextInput.AlignVCenter
+                color: root.foreground
+                font.family: bar ? bar.fontFamily : Style.font.family
+                font.pixelSize: Style.font.bodySmall
+                clip: true
+                text: alarmRow.modelData.label
+                onEditingFinished: root.setAlarmLabel(alarmRow.index, text)
+              }
+            }
+
+            ToggleSwitch {
+              id: alarmToggle
+              anchors.verticalCenter: parent.verticalCenter
+              checked: alarmRow.modelData.on
+              foreground: root.foreground
+              onToggled: root.toggleAlarm(alarmRow.index)
+            }
+
+            StepButton {
+              glyph: "×"
+              anchors.verticalCenter: parent.verticalCenter
+              onStepped: root.removeAlarm(alarmRow.index)
+            }
+          }
+        }
+      }
+
+      Text {
+        visible: root.alarms.length === 0
+        width: parent.width
+        horizontalAlignment: Text.AlignHCenter
+        text: "点右上「＋ 添加」设一个,到点双哔+通知"
+        color: root.dim
+        font.family: bar ? bar.fontFamily : Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
       // ---- 预览 ----
       Text {
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
-        text: panel.nextChime
+        text: panel.previewText
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
