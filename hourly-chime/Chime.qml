@@ -375,6 +375,18 @@ Panel {
           onStepped: root.shiftDndStart(15)
         }
 
+        // Dash between start and end groups, centered in the gap
+        Text {
+          anchors.left: dndPlusStart.right
+          anchors.right: dndMinusEnd.left
+          anchors.verticalCenter: parent.verticalCenter
+          horizontalAlignment: Text.AlignHCenter
+          text: "–"
+          color: root.dim
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.body
+        }
+
         // Right: end group [- 07:00 +], flush right
         StepButton {
           id: dndMinusEnd
