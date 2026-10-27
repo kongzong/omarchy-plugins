@@ -4,15 +4,16 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// 整点报时 + 定时提醒:栏上铃铛 + 弹出面板(报时开关 + 免打扰时段 + 提醒列表)。
-// 结构照抄官方 agents 插件:Panel 管生命周期与 IPC,BarIconButton 是栏按钮,
-// KeyboardPanel 是锚定按钮的弹出面板。
+// Hourly chime + one-shot reminders: bar bell icon + popup panel
+// (chime toggle + DND window + reminder list).
+// Structure copied from the official agents plugin: Panel owns lifecycle/IPC,
+// BarIconButton is the bar button, KeyboardPanel is the anchored popup panel.
 Panel {
   id: root
   moduleName: "com.github.kongzong.hourly-chime"
   ipcTarget: "com.github.kongzong.hourly-chime"
 
-  // 栏按根元素的 implicit size 分配槽位,必须绑定到栏按钮
+  // The bar sizes each slot from the root's implicit size — must bind to the button
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -20,12 +21,13 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.55)
 
   // ------------------------------------------------------------- state
-  // chimeOn 而非 enabled:Item 自带 enabled 属性,不能遮蔽。
+  // chimeOn instead of enabled: Item already has `enabled`, do not shadow it
   property bool chimeOn: false
   property int dndStartMin: 23 * 60
   property int dndEndMin: 7 * 60
 
-  // 提醒列表:[{min: 当日分钟数, label: 提醒内容, on: bool}],单次:响后自动关闭
+  // Reminder list: [{min: minute-of-day, label: text, on: bool}]
+  // One-shot semantics: fired reminders auto-disable (row kept as a template)
   property var alarms: []
   readonly property int maxAlarms: 5
   readonly property bool anyAlarmOn: root.alarms.some(function(a) { return a.on })
@@ -45,7 +47,8 @@ Panel {
     return (v >= 0 && v < 1440) ? v : fallbackMin
   }
 
-  // 免打扰判断,支持跨午夜区间(如 23:00–07:00);只拦报时,不拦提醒
+  // DND check, supports ranges across midnight (e.g. 23:00–07:00).
+  // Blocks the hourly chime only — reminders always fire.
   function inDnd(minOfDay) {
     if (dndStartMin === dndEndMin) return false
     if (dndStartMin < dndEndMin) return minOfDay >= dndStartMin && minOfDay < dndEndMin
@@ -75,8 +78,9 @@ Panel {
     }, null, 2) + "\n")
   }
 
-  // ------------------------------------------------- alarm list helpers
-  // 每次改动都整体重建数组(QML 数组属性需重新赋值才会触发绑定刷新)
+  // ------------------------------------------------- reminder helpers
+  // Every mutation rebuilds the array (a QML array property only refreshes
+  // bindings when reassigned)
   function addAlarm() {
     if (root.alarms.length >= root.maxAlarms) return
     var now = new Date()
@@ -116,7 +120,8 @@ Panel {
     root.saveState()
   }
 
-  // 宽松解析:"7:30"/"07:30"/"730"/"0730" → 当日分钟;非法返回 -1
+  // Lenient time input: "7:30" / "07:30" / "730" / "0730" → minute-of-day,
+  // returns -1 when invalid
   function parseAlarmInput(str) {
     var s = String(str || "").trim()
     var m = s.match(/^(\d{1,2}):(\d{1,2})$/)
@@ -133,7 +138,7 @@ Panel {
     return h * 60 + mi
   }
 
-  // 直接输入时间;非法返回 false,由调用方把输入框重置回当前值
+  // Direct time entry; returns false when invalid so the caller can reset the field
   function setAlarmTime(index, str) {
     var v = parseAlarmInput(str)
     if (v < 0) return false
@@ -142,6 +147,16 @@ Panel {
     root.alarms = copy
     root.saveState()
     return true
+  }
+
+  function shiftDndStart(delta) {
+    root.dndStartMin = ((root.dndStartMin + delta) % 1440 + 1440) % 1440
+    root.saveState()
+  }
+
+  function shiftDndEnd(delta) {
+    root.dndEndMin = ((root.dndEndMin + delta) % 1440 + 1440) % 1440
+    root.saveState()
   }
 
   FileView {
@@ -155,7 +170,7 @@ Panel {
     onFileChanged: reload()
   }
 
-  // ------------------------------------------------------- fire
+  // ------------------------------------------------------------- fire
   readonly property string chimePath: Qt.resolvedUrl("chime.wav").toString().replace(/^file:\/\//, "")
   readonly property string alarmPath: Qt.resolvedUrl("alarm.wav").toString().replace(/^file:\/\//, "")
 
@@ -166,14 +181,14 @@ Panel {
     Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "Hourly Chime", "It's " + fmtTime(minOfDay)])
   }
 
-  // 提醒:双哔,免打扰不拦截,通知带提醒内容(触发由 tick 循环调用)。UI 文案统一英文
+  // Reminder: double beep, ignores DND, notification carries the label
   function fireAlarm(a, minOfDay) {
     Quickshell.execDetached(["paplay", root.alarmPath])
     var msg = (a.label && a.label.length > 0) ? a.label : "It's " + fmtTime(minOfDay)
     Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "Reminder " + fmtTime(minOfDay), msg + "\n(One-shot: auto-disabled, re-enable in panel)"])
   }
 
-  // 单次语义:响过的提醒自动关掉开关(行保留,当模板复用)
+  // One-shot: auto-disable fired reminders (rows kept for one-tap re-arm)
   function autoDisableAlarms(indexes) {
     if (indexes.length === 0) return
     var copy = root.alarms.slice()
@@ -182,15 +197,15 @@ Panel {
     root.saveState()
   }
 
-  // ------------------------------------------------- minute tick
+  // ------------------------------------------------------- minute tick
   function msToNextMinute() {
     var now = new Date()
     var next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0)
     return Math.max(1000, next.getTime() - now.getTime())
   }
 
-  // 每分钟醒来:整点走报时,任意分钟匹配启用的闹钟;
-  // 若因休眠错过(醒来时分钟已过),静默重新对齐,不补响
+  // Wake every minute: :00 triggers the chime, any minute may match a reminder.
+  // If a tick was missed (e.g. after sleep), realign silently — no catch-up.
   Timer {
     id: tickTimer
     repeat: true
@@ -206,7 +221,7 @@ Panel {
         var a = root.alarms[i]
         if (a.on && a.min === minOfDay) { root.fireAlarm(a, minOfDay); fired.push(i) }
       }
-      // 单次提醒:全部触发完再统一自动关闭(避免边遍历边改数组)
+      // Disable all fired reminders after the loop (never mutate while iterating)
       root.autoDisableAlarms(fired)
       tickTimer.interval = root.msToNextMinute()
     }
@@ -214,9 +229,9 @@ Panel {
 
   Component.onCompleted: tickTimer.interval = root.msToNextMinute()
 
-  // 面板打开时每 30 秒刷新一次"下次触发"预览
-  // 注意:必须放根层级——KeyboardPanel 的默认属性 contentItem 只收 Item,
-  // Timer 直接写在它下面会让整个组件加载失败(实测踩坑)。
+  // Refresh the "next reminder" preview every 30s while the panel is open.
+  // Must live at root level — KeyboardPanel's default property (contentItem)
+  // only accepts Items; a Timer directly inside it breaks the whole component.
   property double previewStamp: Date.now()
   Timer {
     interval: 30000
@@ -226,7 +241,7 @@ Panel {
     onTriggered: root.previewStamp = Date.now()
   }
 
-  // 面板里的 −/+ 步进小按钮
+  // Small −/+ stepper button used in the panel rows
   component StepButton: Text {
     property string glyph: "-"
     signal stepped()
@@ -246,12 +261,13 @@ Panel {
     }
   }
 
-  // ------------------------------------------------------ bar button
+  // --------------------------------------------------------- bar button
   BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    // 开=闹钟+高亮色,关=被划掉的闹钟(md-alarm_off,码位从本机字体 cmap 实证)
+    // On = alarm glyph highlighted, off = slashed alarm (md-alarm_off,
+    // codepoint verified against the local font's cmap)
     text: (root.chimeOn || root.anyAlarmOn) ? "\uDB80\uDC20" : "\uDB80\uDC23"
     active: root.chimeOn || root.anyAlarmOn
     onPressed: function(buttonCode) {
@@ -259,7 +275,7 @@ Panel {
     }
   }
 
-  // ------------------------------------------------------ popup panel
+  // -------------------------------------------------------- popup panel
   KeyboardPanel {
     id: panel
     anchorItem: button
@@ -269,25 +285,17 @@ Panel {
     contentWidth: panel.fittedContentWidth(Style.space(260))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(520))
 
+    // Shown only when a reminder is enabled; earliest enabled one wins
     readonly property string previewText: {
-      var now = new Date(root.previewStamp)
-      var nowMin = now.getHours() * 60 + now.getMinutes()
-      var parts = []
-      // 下次报时
-      parts.push("Next chime " + root.fmtTime((nowMin - nowMin % 60) + 60))
-      if (root.inDnd(nowMin)) parts[parts.length - 1] += " (DND, will skip)"
-      // 下次提醒(英文 UI:Next chime / Next reminder)
       var best = -1
       for (var i = 0; i < root.alarms.length; i++) {
         var a = root.alarms[i]
         if (!a.on) continue
         if (best < 0 || a.min < root.alarms[best].min) best = i
       }
-      if (best >= 0) {
-        var a2 = root.alarms[best]
-        parts.push("Next reminder " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : ""))
-      }
-      return parts.join(" · ")
+      if (best < 0) return ""
+      var a2 = root.alarms[best]
+      return "Next reminder " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : "")
     }
 
     Column {
@@ -295,7 +303,7 @@ Panel {
       width: parent.width
       spacing: Style.space(14)
 
-      // ---- 标题 + 开关 ----
+      // ---- Hourly Chime section: toggle + its DND window ----
       Item {
         width: parent.width
         height: Math.max(titleText.implicitHeight, switchControl.trackHeight)
@@ -318,45 +326,32 @@ Panel {
           checked: root.chimeOn
           foreground: root.foreground
           onToggled: {
-            root.chimeOn = !root.chimeOn  // ToggleSwitch 不自翻 checked,caller 负责
+            root.chimeOn = !root.chimeOn  // ToggleSwitch does not flip itself; caller owns the value
             root.saveState()
           }
         }
       }
 
-      // 分隔线
-      Rectangle {
-        width: parent.width
-        height: 1
-        color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
-      }
-
-      // ---- 免打扰(单行紧凑:起 – 止) ----
-      Text {
-        text: "Do not disturb (reminders always ring)"
-        color: root.dim
-        font.family: bar ? bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.bodySmall
-      }
-
-      function shiftDndStart(delta) {
-        root.dndStartMin = ((root.dndStartMin + delta) % 1440 + 1440) % 1440
-        root.saveState()
-      }
-
-      function shiftDndEnd(delta) {
-        root.dndEndMin = ((root.dndEndMin + delta) % 1440 + 1440) % 1440
-        root.saveState()
-      }
-
+      // DND window, visually part of the Hourly Chime section (no extra caption
+      // needed — it sits right under the chime toggle)
       Item {
         width: parent.width
         height: Style.space(28)
 
-        // 左组:开始 [- 23:00 +]
+        // Left: "DND" label + start group [- 23:00 +]
+        Text {
+          id: dndLabel
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          text: "DND"
+          color: root.dim
+          font.family: bar ? bar.fontFamily : Style.font.family
+          font.pixelSize: Style.font.bodySmall
+        }
         StepButton {
           id: dndMinusStart
-          anchors.left: parent.left
+          anchors.left: dndLabel.right
+          anchors.leftMargin: Style.space(10)
           anchors.verticalCenter: parent.verticalCenter
           glyph: "-"
           onStepped: root.shiftDndStart(-15)
@@ -380,18 +375,7 @@ Panel {
           onStepped: root.shiftDndStart(15)
         }
 
-        // 中间分隔
-        Text {
-          id: dndDash
-          anchors.horizontalCenter: parent.horizontalCenter
-          anchors.verticalCenter: parent.verticalCenter
-          text: "–"
-          color: root.dim
-          font.family: bar ? bar.fontFamily : Style.font.family
-          font.pixelSize: Style.font.body
-        }
-
-        // 右组:结束 [- 07:00 +],贴右对齐
+        // Right: end group [- 07:00 +], flush right
         StepButton {
           id: dndMinusEnd
           anchors.right: dndTimeEnd.left
@@ -419,14 +403,14 @@ Panel {
         }
       }
 
-      // 分隔线
+      // Separator
       Rectangle {
         width: parent.width
         height: 1
         color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
       }
 
-      // ---- 定时提醒(单次,响后自动关闭) ----
+      // ---- Reminders section (one-shot, auto-off after firing) ----
       Item {
         width: parent.width
         height: alarmTitle.implicitHeight
@@ -472,7 +456,8 @@ Panel {
           width: parent.width
           height: Style.space(28)
 
-          // 全锚点布局:左右两端定死,中间输入框自动填满,不依赖估算宽度
+          // All anchors: left/right groups pinned to edges, the label box
+          // stretches in between — no estimated widths, cannot overflow
           StepButton {
             id: minusBtn
             anchors.left: parent.left
@@ -481,7 +466,8 @@ Panel {
             onStepped: root.shiftAlarm(alarmRow.index, -5)
           }
 
-          // 时间:可直接输入(7:30 / 0730 / 730),回车或失焦生效;非法自动还原
+          // Time: directly editable ("7:30" / "0730" / "730"), commits on
+          // Enter/focus loss, invalid input reverts
           Item {
             id: timeBox
             anchors.left: minusBtn.right
@@ -511,7 +497,7 @@ Panel {
               text: root.fmtTime(alarmRow.modelData.min)
               onEditingFinished: {
                 if (!root.setAlarmTime(alarmRow.index, text))
-                  timeInput.text = root.fmtTime(alarmRow.modelData.min)  // 非法输入还原
+                  timeInput.text = root.fmtTime(alarmRow.modelData.min)  // revert invalid input
               }
             }
           }
@@ -543,7 +529,7 @@ Panel {
             onToggled: root.toggleAlarm(alarmRow.index)
           }
 
-          // 提醒内容:点击输入,失焦/回车保存
+          // Label: click to type, commits on Enter/focus loss
           Item {
             id: labelBox
             anchors.left: plusBtn.right
@@ -596,16 +582,19 @@ Panel {
         visible: root.alarms.length === 0
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
-        text: "Click ＋ Add to set one — double beep + notification, auto-off after firing"
+        elide: Text.ElideRight
+        text: "＋ Add to set one — double beep, auto-off"
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
       }
 
-      // ---- 预览 ----
+      // ---- Preview (only when a reminder is enabled) ----
       Text {
+        visible: root.anyAlarmOn
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
+        elide: Text.ElideRight
         text: panel.previewText
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
