@@ -163,14 +163,14 @@ Panel {
     if (!root.chimeOn) return
     if (root.inDnd(minOfDay)) return
     Quickshell.execDetached(["paplay", root.chimePath])
-    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "整点报时", "现在 " + fmtTime(minOfDay)])
+    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "Hourly Chime", "It's " + fmtTime(minOfDay)])
   }
 
-  // 提醒:双哔,免打扰不拦截,通知带提醒内容(触发由 tick 循环调用)
+  // 提醒:双哔,免打扰不拦截,通知带提醒内容(触发由 tick 循环调用)。UI 文案统一英文
   function fireAlarm(a, minOfDay) {
     Quickshell.execDetached(["paplay", root.alarmPath])
-    var msg = (a.label && a.label.length > 0) ? a.label : "现在 " + fmtTime(minOfDay)
-    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "提醒 " + fmtTime(minOfDay), msg + "\n(单次提醒,已自动关闭;要再响点开面板重开)"])
+    var msg = (a.label && a.label.length > 0) ? a.label : "It's " + fmtTime(minOfDay)
+    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "Reminder " + fmtTime(minOfDay), msg + "\n(One-shot: auto-disabled, re-enable in panel)"])
   }
 
   // 单次语义:响过的提醒自动关掉开关(行保留,当模板复用)
@@ -274,9 +274,9 @@ Panel {
       var nowMin = now.getHours() * 60 + now.getMinutes()
       var parts = []
       // 下次报时
-      parts.push("下次报时 " + root.fmtTime((nowMin - nowMin % 60) + 60))
-      if (root.inDnd(nowMin)) parts[parts.length - 1] += "(免打扰中,将跳过)"
-      // 下次提醒(启用中的最早一个;过了今天时刻的算明天,不显示具体日期)
+      parts.push("Next chime " + root.fmtTime((nowMin - nowMin % 60) + 60))
+      if (root.inDnd(nowMin)) parts[parts.length - 1] += " (DND, will skip)"
+      // 下次提醒(英文 UI:Next chime / Next reminder)
       var best = -1
       for (var i = 0; i < root.alarms.length; i++) {
         var a = root.alarms[i]
@@ -285,7 +285,7 @@ Panel {
       }
       if (best >= 0) {
         var a2 = root.alarms[best]
-        parts.push("下次提醒 " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : ""))
+        parts.push("Next reminder " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : ""))
       }
       return parts.join(" · ")
     }
@@ -304,7 +304,7 @@ Panel {
           id: titleText
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          text: "整点报时"
+          text: "Hourly Chime"
           color: root.foreground
           font.family: bar ? bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.body
@@ -333,7 +333,7 @@ Panel {
 
       // ---- 免打扰(单行紧凑:起 – 止) ----
       Text {
-        text: "免打扰时段(不拦提醒)"
+        text: "Do not disturb (reminders always ring)"
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
@@ -435,7 +435,7 @@ Panel {
           id: alarmTitle
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          text: "定时提醒(单次)"
+          text: "Reminders (one-shot)"
           color: root.dim
           font.family: bar ? bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -444,7 +444,7 @@ Panel {
         Text {
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
-          text: root.alarms.length >= root.maxAlarms ? "已达上限" : "＋ 添加"
+          text: root.alarms.length >= root.maxAlarms ? "Max reached" : "＋ Add"
           color: mouseAdd.containsMouse ? Commons.Color.accent : (root.alarms.length >= root.maxAlarms ? root.dim : root.foreground)
           font.family: bar ? bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -568,7 +568,7 @@ Panel {
               anchors.rightMargin: Style.space(6)
               anchors.verticalCenter: parent.verticalCenter
               visible: labelInput.text === "" && !labelInput.activeFocus
-              text: "提醒内容…"
+              text: "Label…"
               color: root.dim
               font.family: bar ? bar.fontFamily : Style.font.family
               font.pixelSize: Style.font.bodySmall
@@ -596,7 +596,7 @@ Panel {
         visible: root.alarms.length === 0
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
-        text: "点右上「＋ 添加」设一个,到点双哔+通知,响完自动关"
+        text: "Click ＋ Add to set one — double beep + notification, auto-off after firing"
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall

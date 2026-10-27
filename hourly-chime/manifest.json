@@ -12,7 +12,7 @@
   },
   "barWidget": {
     "displayName": "Hourly Chime",
-    "description": "整点报时+单次定时提醒,免打扰时段可调",
+    "description": "Hourly chime + one-shot reminders, configurable DND window",
     "category": "Utilities",
     "aliases": ["chime", "hourly", "报时", "整点"],
     "allowMultiple": false
