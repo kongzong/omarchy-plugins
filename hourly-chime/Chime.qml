@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// 整点报时 + 闹钟提醒:栏上铃铛 + 弹出面板(报时开关 + 免打扰时段 + 闹钟列表)。
+// 整点报时 + 定时提醒:栏上铃铛 + 弹出面板(报时开关 + 免打扰时段 + 提醒列表)。
 // 结构照抄官方 agents 插件:Panel 管生命周期与 IPC,BarIconButton 是栏按钮,
 // KeyboardPanel 是锚定按钮的弹出面板。
 Panel {
@@ -25,7 +25,7 @@ Panel {
   property int dndStartMin: 23 * 60
   property int dndEndMin: 7 * 60
 
-  // 闹钟列表:[{min: 当日分钟数, label: 提醒内容, on: bool}],每天重复触发
+  // 提醒列表:[{min: 当日分钟数, label: 提醒内容, on: bool}],单次:响后自动关闭
   property var alarms: []
   readonly property int maxAlarms: 5
   readonly property bool anyAlarmOn: root.alarms.some(function(a) { return a.on })
@@ -45,7 +45,7 @@ Panel {
     return (v >= 0 && v < 1440) ? v : fallbackMin
   }
 
-  // 免打扰判断,支持跨午夜区间(如 23:00–07:00);只拦报时,不拦闹钟
+  // 免打扰判断,支持跨午夜区间(如 23:00–07:00);只拦报时,不拦提醒
   function inDnd(minOfDay) {
     if (dndStartMin === dndEndMin) return false
     if (dndStartMin < dndEndMin) return minOfDay >= dndStartMin && minOfDay < dndEndMin
@@ -166,14 +166,14 @@ Panel {
     Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "整点报时", "现在 " + fmtTime(minOfDay)])
   }
 
-  // 闹钟:双哔,免打扰不拦截,通知带提醒内容(触发由 tick 循环调用)
+  // 提醒:双哔,免打扰不拦截,通知带提醒内容(触发由 tick 循环调用)
   function fireAlarm(a, minOfDay) {
     Quickshell.execDetached(["paplay", root.alarmPath])
     var msg = (a.label && a.label.length > 0) ? a.label : "现在 " + fmtTime(minOfDay)
-    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "闹钟 " + fmtTime(minOfDay), msg + "\n(单次提醒,已自动关闭;要再响点开面板重开)"])
+    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "提醒 " + fmtTime(minOfDay), msg + "\n(单次提醒,已自动关闭;要再响点开面板重开)"])
   }
 
-  // 单次语义:响过的闹钟自动关掉开关(行保留,当模板复用)
+  // 单次语义:响过的提醒自动关掉开关(行保留,当模板复用)
   function autoDisableAlarms(indexes) {
     if (indexes.length === 0) return
     var copy = root.alarms.slice()
@@ -276,7 +276,7 @@ Panel {
       // 下次报时
       parts.push("下次报时 " + root.fmtTime((nowMin - nowMin % 60) + 60))
       if (root.inDnd(nowMin)) parts[parts.length - 1] += "(免打扰中,将跳过)"
-      // 下次闹钟(启用中的最早一个;过了今天时刻的算明天,不显示具体日期)
+      // 下次提醒(启用中的最早一个;过了今天时刻的算明天,不显示具体日期)
       var best = -1
       for (var i = 0; i < root.alarms.length; i++) {
         var a = root.alarms[i]
@@ -333,7 +333,7 @@ Panel {
 
       // ---- 免打扰(单行紧凑:起 – 止) ----
       Text {
-        text: "免打扰时段(不拦闹钟)"
+        text: "免打扰时段(不拦提醒)"
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
