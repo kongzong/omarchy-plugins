@@ -138,11 +138,20 @@ Panel {
     Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "整点报时", "现在 " + fmtTime(minOfDay)])
   }
 
-  // 闹钟:双哔,免打扰不拦截,通知带提醒内容
+  // 闹钟:双哔,免打扰不拦截,通知带提醒内容(触发由 tick 循环调用)
   function fireAlarm(a, minOfDay) {
     Quickshell.execDetached(["paplay", root.alarmPath])
     var msg = (a.label && a.label.length > 0) ? a.label : "现在 " + fmtTime(minOfDay)
-    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "闹钟 " + fmtTime(minOfDay), msg])
+    Quickshell.execDetached(["notify-send", "-a", "hourly-chime", "闹钟 " + fmtTime(minOfDay), msg + "\n(单次提醒,已自动关闭;要再响点开面板重开)"])
+  }
+
+  // 单次语义:响过的闹钟自动关掉开关(行保留,当模板复用)
+  function autoDisableAlarms(indexes) {
+    if (indexes.length === 0) return
+    var copy = root.alarms.slice()
+    for (var k = 0; k < indexes.length; k++) copy[indexes[k]].on = false
+    root.alarms = copy
+    root.saveState()
   }
 
   // ------------------------------------------------- minute tick
@@ -164,10 +173,13 @@ Panel {
       var now = new Date()
       var minOfDay = now.getHours() * 60 + now.getMinutes()
       if (now.getMinutes() === 0) root.fireChime(minOfDay)
+      var fired = []
       for (var i = 0; i < root.alarms.length; i++) {
         var a = root.alarms[i]
-        if (a.on && a.min === minOfDay) root.fireAlarm(a, minOfDay)
+        if (a.on && a.min === minOfDay) { root.fireAlarm(a, minOfDay); fired.push(i) }
       }
+      // 单次提醒:全部触发完再统一自动关闭(避免边遍历边改数组)
+      root.autoDisableAlarms(fired)
       tickTimer.interval = root.msToNextMinute()
     }
   }
@@ -245,7 +257,7 @@ Panel {
       }
       if (best >= 0) {
         var a2 = root.alarms[best]
-        parts.push("下次闹钟 " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : ""))
+        parts.push("下次提醒 " + root.fmtTime(a2.min) + (a2.label.length > 0 ? " " + a2.label : ""))
       }
       return parts.join(" · ")
     }
@@ -362,7 +374,7 @@ Panel {
         color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
       }
 
-      // ---- 闹钟(每天重复) ----
+      // ---- 定时提醒(单次,响后自动关闭) ----
       Item {
         width: parent.width
         height: alarmTitle.implicitHeight
@@ -371,7 +383,7 @@ Panel {
           id: alarmTitle
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          text: "闹钟(每天重复)"
+          text: "定时提醒(单次)"
           color: root.dim
           font.family: bar ? bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -508,7 +520,7 @@ Panel {
         visible: root.alarms.length === 0
         width: parent.width
         horizontalAlignment: Text.AlignHCenter
-        text: "点右上「＋ 添加」设一个,到点双哔+通知"
+        text: "点右上「＋ 添加」设一个,到点双哔+通知,响完自动关"
         color: root.dim
         font.family: bar ? bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.bodySmall
