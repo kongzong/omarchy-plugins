@@ -408,85 +408,97 @@ Panel {
           width: parent.width
           height: Style.space(28)
 
-          Row {
-            anchors.fill: parent
-            spacing: Style.space(6)
+          // 全锚点布局:左右两端定死,中间输入框自动填满,不依赖估算宽度
+          StepButton {
+            id: minusBtn
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            glyph: "-"
+            onStepped: root.shiftAlarm(alarmRow.index, -5)
+          }
 
-            StepButton {
-              glyph: "-"
-              anchors.verticalCenter: parent.verticalCenter
-              onStepped: root.shiftAlarm(alarmRow.index, -5)
+          Text {
+            id: timeText
+            anchors.left: minusBtn.right
+            anchors.leftMargin: Style.space(6)
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.fmtTime(alarmRow.modelData.min)
+            color: root.foreground
+            font.family: bar ? bar.fontFamily : Style.font.family
+            font.pixelSize: Style.font.body
+          }
+
+          StepButton {
+            id: plusBtn
+            anchors.left: timeText.right
+            anchors.leftMargin: Style.space(6)
+            anchors.verticalCenter: parent.verticalCenter
+            glyph: "+"
+            onStepped: root.shiftAlarm(alarmRow.index, 5)
+          }
+
+          StepButton {
+            id: deleteBtn
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            glyph: "×"
+            onStepped: root.removeAlarm(alarmRow.index)
+          }
+
+          ToggleSwitch {
+            id: alarmToggle
+            anchors.right: deleteBtn.left
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            checked: alarmRow.modelData.on
+            foreground: root.foreground
+            onToggled: root.toggleAlarm(alarmRow.index)
+          }
+
+          // 提醒内容:点击输入,失焦/回车保存
+          Item {
+            id: labelBox
+            anchors.left: plusBtn.right
+            anchors.leftMargin: Style.space(6)
+            anchors.right: alarmToggle.left
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+
+            Rectangle {
+              anchors.fill: parent
+              radius: Style.space(4)
+              color: labelInput.activeFocus
+                     ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                     : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
             }
 
             Text {
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(6)
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(6)
               anchors.verticalCenter: parent.verticalCenter
-              text: root.fmtTime(alarmRow.modelData.min)
+              visible: labelInput.text === "" && !labelInput.activeFocus
+              text: "提醒内容…"
+              color: root.dim
+              font.family: bar ? bar.fontFamily : Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            TextInput {
+              id: labelInput
+              anchors.fill: parent
+              anchors.leftMargin: Style.space(6)
+              anchors.rightMargin: Style.space(6)
+              verticalAlignment: TextInput.AlignVCenter
               color: root.foreground
               font.family: bar ? bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.body
-            }
-
-            StepButton {
-              glyph: "+"
-              anchors.verticalCenter: parent.verticalCenter
-              onStepped: root.shiftAlarm(alarmRow.index, 5)
-            }
-
-            // 提醒内容:点击输入,失焦/回车保存
-            Item {
-              id: labelBox
-              width: parent.width - parent.spacing * 5 - 12 - toggleWidth
-              height: parent.height
-
-              readonly property int toggleWidth: Style.space(46)
-
-              Rectangle {
-                anchors.fill: parent
-                radius: Style.space(4)
-                color: labelInput.activeFocus
-                       ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
-                       : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06)
-              }
-
-              Text {
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(6)
-                anchors.verticalCenter: parent.verticalCenter
-                visible: labelInput.text === "" && !labelInput.activeFocus
-                text: "提醒内容…"
-                color: root.dim
-                font.family: bar ? bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                elide: Text.ElideRight
-              }
-
-              TextInput {
-                id: labelInput
-                anchors.fill: parent
-                anchors.leftMargin: Style.space(6)
-                anchors.rightMargin: Style.space(6)
-                verticalAlignment: TextInput.AlignVCenter
-                color: root.foreground
-                font.family: bar ? bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.bodySmall
-                clip: true
-                text: alarmRow.modelData.label
-                onEditingFinished: root.setAlarmLabel(alarmRow.index, text)
-              }
-            }
-
-            ToggleSwitch {
-              id: alarmToggle
-              anchors.verticalCenter: parent.verticalCenter
-              checked: alarmRow.modelData.on
-              foreground: root.foreground
-              onToggled: root.toggleAlarm(alarmRow.index)
-            }
-
-            StepButton {
-              glyph: "×"
-              anchors.verticalCenter: parent.verticalCenter
-              onStepped: root.removeAlarm(alarmRow.index)
+              font.pixelSize: Style.font.bodySmall
+              clip: true
+              text: alarmRow.modelData.label
+              onEditingFinished: root.setAlarmLabel(alarmRow.index, text)
             }
           }
         }
