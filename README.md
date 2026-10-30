@@ -7,7 +7,7 @@ A collection of Omarchy 4 plugins by kongzong. Every plugin is self-contained
 
 | Plugin | Description | Install |
 |--------|-------------|---------|
-| [hourly-chime](./hourly-chime/) | Hourly chime + one-shot reminders (double beep + label, auto-off after firing), configurable DND window | `cp -r hourly-chime ~/.config/omarchy/plugins/` |
+| [hourly-chime](./hourly-chime/) | Casio-style beep + notification at the top of every hour, configurable quiet hours | `cp -r hourly-chime ~/.config/omarchy/plugins/` |
 
 ## Generic install (Omarchy 4.x)
 

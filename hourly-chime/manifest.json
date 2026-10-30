@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "id": "com.github.kongzong.hourly-chime",
   "name": "Hourly Chime",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "author": "kongzong",
   "license": "MIT",
-  "description": "Hourly chime plus one-shot reminders: a Casio-style beep and notification at the top of every hour, and double-beep reminders at user-set times with labels (auto-disabled after firing). Configurable do-not-disturb window (chime only; reminders always fire).",
+  "description": "A Casio-style beep and notification at the top of every hour, with a configurable do-not-disturb window.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Chime.qml"
   },
   "barWidget": {
     "displayName": "Hourly Chime",
-    "description": "Hourly chime + one-shot reminders, configurable DND window",
+    "description": "Beep at the top of every hour, configurable quiet hours",
     "category": "Utilities",
     "aliases": ["chime", "hourly", "报时", "整点"],
     "allowMultiple": false
